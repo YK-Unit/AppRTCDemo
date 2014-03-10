@@ -1,5 +1,5 @@
-##WebRTC4iOS Client Demo-AppRTCDemo#
-===
+WebRTC4iOS - AppRTCDemo
+=================================
 ####About AppRTCDemo#
 This is a WebRTC4iOS client demo. The demo show how 2 ios clients have a real-time video communication. If you have the TURN server, they can communicate in different LAN.
 

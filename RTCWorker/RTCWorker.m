@@ -1,0 +1,542 @@
+//
+//  RTCWorker.m
+//  AppRTCDemo
+//
+//  Created by zhang zhiyu on 14-2-26.
+//  Copyright (c) 2014年 YK-Unit. All rights reserved.
+//
+
+#import "RTCWorker.h"
+#import "RTCICEServer.h"
+#import "RTCICECandidate.h"
+#import "RTCICEServer.h"
+#import "RTCMediaConstraints.h"
+#import "RTCMediaStream.h"
+#import "RTCPair.h"
+#import "RTCPeerConnection.h"
+#import "RTCPeerConnectionDelegate.h"
+#import "RTCPeerConnectionFactory.h"
+#import "RTCSessionDescription.h"
+#import "RTCVideoRenderer.h"
+#import "RTCVideoCapturer.h"
+#import "RTCVideoTrack.h"
+
+#import <AVFoundation/AVFoundation.h>
+
+@interface RTCWorker()
+@property(nonatomic, strong) RTCPeerConnectionFactory *peerConnectionFactory;
+@property(nonatomic, strong) RTCMediaConstraints *pcConstraints;
+@property(nonatomic, strong) RTCMediaConstraints *sdpConstraints;
+@property(nonatomic, strong) RTCMediaConstraints *videoConstraints;
+@property(nonatomic, strong) NSMutableArray *queuedSignalingMessages;
+@property(nonatomic, strong) RTCPeerConnection *peerConnection;
+@property(nonatomic, strong) RTCVideoCapturer *localVideoCapture;
+@property(nonatomic, strong) RTCVideoSource *localVideoSource;
+@property(nonatomic, strong) RTCVideoTrack *localVideoTrack;
+@property(nonatomic, assign) BOOL hasCreatedPeerConnection;
+
++ (NSString *)firstMatch:(NSRegularExpression *)pattern
+              withString:(NSString *)string;
++ (NSString *)preferISAC:(NSString *)origSDP;
+
+- (NSArray *)getLastICEServers;
+- (void)processSignalingMessage:(NSString *)message;
+- (void)callerStart;
+- (void)calleeStart;
+@end
+
+@implementation RTCWorker
+@synthesize rtcTarget;
+@synthesize isInitiator;
+@synthesize delegate;
+@synthesize peerConnectionFactory,peerConnection;
+@synthesize pcConstraints,sdpConstraints,videoConstraints;
+@synthesize queuedSignalingMessages;
+@synthesize localVideoCapture,localVideoSource,localVideoTrack;
+@synthesize hasCreatedPeerConnection;
+
++ (RTCWorker *)sharedInstance
+{
+    static dispatch_once_t pred = 0;
+    __strong static RTCWorker *_sharedRTCWorker = nil;
+    dispatch_once(&pred, ^{
+        _sharedRTCWorker = [[self alloc] init];
+    });
+    return _sharedRTCWorker;
+}
+
+- (id)init
+{
+    self = [super init];
+    if (self) {
+        rtcTarget = Nil;
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    
+}
+
+- (void)startEngine
+{
+    [XMPPWorker sharedInstance].signalingDelegate = self;
+    
+    [RTCPeerConnectionFactory initializeSSL];
+    
+    self.peerConnectionFactory = [[RTCPeerConnectionFactory alloc] init];
+
+    self.queuedSignalingMessages = [NSMutableArray array];
+    
+    
+    //set RTCPeerConnection's constraints
+    //TODO:FindBug-when DtlsSrtpKeyAgreement=true,can't push down offer/answer SDP
+    self.pcConstraints = [[RTCMediaConstraints alloc] initWithMandatoryConstraints:@[[[RTCPair alloc] initWithKey:@"OfferToReceiveAudio" value:@"true"], [[RTCPair alloc] initWithKey:@"OfferToReceiveVideo" value:@"true"]] optionalConstraints:@[[[RTCPair alloc] initWithKey:@"DtlsSrtpKeyAgreement" value:@"false"]]];
+    
+    
+    //set SDP's(offer/answer) Constraints
+    self.sdpConstraints = [[RTCMediaConstraints alloc] initWithMandatoryConstraints:@[[[RTCPair alloc] initWithKey:@"OfferToReceiveAudio" value:@"true"], [[RTCPair alloc] initWithKey:@"OfferToReceiveVideo" value:@"true"]] optionalConstraints:nil];
+    
+    
+    //set RTCVideoSource's(localVideoSource) constraints
+    RTCPair *maxAspectRatio = [[RTCPair alloc] initWithKey:@"maxAspectRatio" value:@"4:3"];
+    
+    //when maxWidth=640,maxHeight=480,the video transmission is slow
+    RTCPair *maxWidth = [[RTCPair alloc] initWithKey:@"maxWidth" value:@"320"];
+    RTCPair *minWidth = [[RTCPair alloc] initWithKey:@"minWidth" value:@"160"];
+    
+    RTCPair *maxHeight = [[RTCPair alloc] initWithKey:@"maxHeight" value:@"240"];
+    RTCPair *minHeight = [[RTCPair alloc] initWithKey:@"minHeight" value:@"120"];
+    
+    RTCPair *maxFrameRate = [[RTCPair alloc] initWithKey:@"maxFrameRate" value:@"30"];
+    RTCPair *minFrameRate = [[RTCPair alloc] initWithKey:@"minFrameRate" value:@"24"];
+    
+    NSArray *mandatory = @[maxAspectRatio,maxWidth,minWidth,maxHeight,minHeight, maxFrameRate ,minFrameRate];
+    self.videoConstraints = [[RTCMediaConstraints alloc] initWithMandatoryConstraints:mandatory optionalConstraints:nil];
+    
+}
+
+- (void)stopEngine
+{
+    [XMPPWorker sharedInstance].signalingDelegate = nil;
+    
+    [RTCPeerConnectionFactory deinitializeSSL];
+
+    [self.queuedSignalingMessages removeAllObjects];
+    self.queuedSignalingMessages = nil;
+    
+    self.pcConstraints = nil;
+    self.sdpConstraints = nil;
+    self.videoConstraints = nil;
+    
+    self.peerConnectionFactory = nil;
+}
+
+#pragma mark - private methods
+- (NSArray *)getLastICEServers
+{
+
+    NSMutableArray *ICEServers = [NSMutableArray array];
+
+#warning - set yourself TURN servers.\
+           If have none, you ONLY have p2p RTC in the SAME LAN
+    //if you have a TURN server ,then add it to ICEServers like this
+    /*
+    NSString *url = @"turn:192.168.10.10:3478";
+    NSString *username = @"name";
+    NSString *credential = @"pwd";
+    
+    RTCICEServer *ICEServer = [[RTCICEServer alloc] initWithURI:[NSURL URLWithString:url]username:username password:credential];
+    [ICEServers addObject:ICEServer];
+    */
+    
+    return ICEServers;
+}
+
+#pragma mark RTCSessionDescriptonDelegate methods
+// Match |pattern| to |string| and return the first group of the first
+// match, or nil if no match was found.
++ (NSString *)firstMatch:(NSRegularExpression *)pattern
+              withString:(NSString *)string
+{
+    NSTextCheckingResult* result =
+    [pattern firstMatchInString:string
+                        options:0
+                          range:NSMakeRange(0, [string length])];
+    if (!result)
+        return nil;
+    return [string substringWithRange:[result rangeAtIndex:1]];
+}
+
+// Mangle |origSDP| to prefer the ISAC/16k audio codec.
++ (NSString *)preferISAC:(NSString *)origSDP
+{
+    int mLineIndex = -1;
+    NSString* isac16kRtpMap = nil;
+    NSArray* lines = [origSDP componentsSeparatedByString:@"\n"];
+    NSRegularExpression* isac16kRegex = [NSRegularExpression
+                                         regularExpressionWithPattern:@"^a=rtpmap:(\\d+) ISAC/16000[\r]?$"
+                                         options:0
+                                         error:nil];
+    for (int i = 0;
+         (i < [lines count]) && (mLineIndex == -1 || isac16kRtpMap == nil);
+         ++i) {
+        NSString* line = [lines objectAtIndex:i];
+        if ([line hasPrefix:@"m=audio "]) {
+            mLineIndex = i;
+            continue;
+        }
+        isac16kRtpMap = [self firstMatch:isac16kRegex withString:line];
+    }
+    if (mLineIndex == -1) {
+        NSLog(@"No m=audio line, so can't prefer iSAC");
+        return origSDP;
+    }
+    if (isac16kRtpMap == nil) {
+        NSLog(@"No ISAC/16000 line, so can't prefer iSAC");
+        return origSDP;
+    }
+    NSArray* origMLineParts =
+    [[lines objectAtIndex:mLineIndex] componentsSeparatedByString:@" "];
+    NSMutableArray* newMLine =
+    [NSMutableArray arrayWithCapacity:[origMLineParts count]];
+    int origPartIndex = 0;
+    // Format is: m=<media> <port> <proto> <fmt> ...
+    [newMLine addObject:[origMLineParts objectAtIndex:origPartIndex++]];
+    [newMLine addObject:[origMLineParts objectAtIndex:origPartIndex++]];
+    [newMLine addObject:[origMLineParts objectAtIndex:origPartIndex++]];
+    [newMLine addObject:isac16kRtpMap];
+    for (; origPartIndex < [origMLineParts count]; ++origPartIndex) {
+        if ([isac16kRtpMap compare:[origMLineParts objectAtIndex:origPartIndex]]
+            != NSOrderedSame) {
+            [newMLine addObject:[origMLineParts objectAtIndex:origPartIndex]];
+        }
+    }
+    NSMutableArray* newLines = [NSMutableArray arrayWithCapacity:[lines count]];
+    [newLines addObjectsFromArray:lines];
+    [newLines replaceObjectAtIndex:mLineIndex
+                        withObject:[newMLine componentsJoinedByString:@" "]];
+    return [newLines componentsJoinedByString:@"\n"];
+}
+
+- (void)callerStart
+{
+    //** create offer
+    [self.peerConnection createOfferWithDelegate:self constraints:self.sdpConstraints];
+    EASYLogInfo(@"create offer ...");
+}
+
+- (void)calleeStart
+{
+    for (int i = 0; i < [self.queuedSignalingMessages count]; i++) {
+        NSString *message = [self.queuedSignalingMessages objectAtIndex:i];
+        [self processSignalingMessage:message];
+    }
+    [self.queuedSignalingMessages removeAllObjects];
+}
+
+- (void)processSignalingMessage:(NSString *)message
+{
+    if (!hasCreatedPeerConnection) {
+        EASYLogError(@"has NOT created peerConnection...");
+        return;
+    }
+    
+    NSString *jsonStr = message;
+    NSData *jsonData = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
+    NSError *error;
+    NSDictionary *jsonDict = [NSJSONSerialization JSONObjectWithData:jsonData options:kNilOptions error:&error];
+    NSAssert(!error,@"%@",[NSString stringWithFormat:@"Error: %@", error.description]);
+    NSString *type = [jsonDict objectForKey:@"type"];
+    if ([type compare:@"offer"] == NSOrderedSame) {
+        NSString *sdpString = [jsonDict objectForKey:@"sdp"];
+        RTCSessionDescription *sdp = [[RTCSessionDescription alloc]
+                                      initWithType:type sdp:[RTCWorker preferISAC:sdpString]];
+        [self.peerConnection setRemoteDescriptionWithDelegate:self sessionDescription:sdp];
+        
+        //** create answer
+        [self.peerConnection createAnswerWithDelegate:self constraints:self.sdpConstraints];
+        EASYLogInfo(@"crate answer ...");
+        
+    }else if ([type compare:@"answer"] == NSOrderedSame) {
+        NSString *sdpString = [jsonDict objectForKey:@"sdp"];
+        RTCSessionDescription *sdp = [[RTCSessionDescription alloc]
+                                      initWithType:type sdp:[RTCWorker preferISAC:sdpString]];
+        [self.peerConnection setRemoteDescriptionWithDelegate:self sessionDescription:sdp];
+        
+    }else if ([type compare:@"candidate"] == NSOrderedSame) {
+        NSString *mid = [jsonDict objectForKey:@"id"];
+        NSNumber *sdpLineIndex = [jsonDict objectForKey:@"label"];
+        NSString *sdp = [jsonDict objectForKey:@"candidate"];
+        RTCICECandidate *candidate =
+        [[RTCICECandidate alloc] initWithMid:mid
+                                       index:sdpLineIndex.intValue
+                                         sdp:sdp];
+        
+        [self.peerConnection addICECandidate:candidate];
+
+    }else if ([type compare:@"bye"] == NSOrderedSame) {
+        [self stopRTCTaskAsInitiator:NO];
+    }
+
+}
+
+#pragma mark - public methods
+- (BOOL)startRTCTaskAsInitiator:(BOOL)flag withTarget:(NSString *)targetJID
+{
+    isInitiator = flag;
+    self.rtcTarget = targetJID;
+ 
+    NSArray *servers = [self getLastICEServers];
+
+    //TODO:FixBUG-[RTCPeerConnection updateICEServers:constraints] can't connect to TURN Server,BUT [RTCPeerConnectionFactory peerConnectionWithICEServers:constraints:delegate:] can!
+    self.peerConnection = [self.peerConnectionFactory peerConnectionWithICEServers:servers constraints:self.pcConstraints delegate:self];
+    self.hasCreatedPeerConnection = YES;
+    
+    RTCMediaStream *lms = [self.peerConnectionFactory mediaStreamWithLabel:@"ARDAMS"];
+    EASYLogInfo(@"Adding Audio and Video devices ...");
+    [lms addAudioTrack:[self.peerConnectionFactory audioTrackWithID:@"ARDAMSa0"]];
+    
+    if (!self.localVideoCapture) {
+        NSString *cameraID = nil;
+        //** front camera
+        for (AVCaptureDevice *captureDevice in [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo] ) {
+            if (!cameraID || captureDevice.position == AVCaptureDevicePositionFront) {
+                cameraID = [captureDevice localizedName];
+            }
+        }
+        self.localVideoCapture = [RTCVideoCapturer capturerWithDeviceName:cameraID];
+    }
+    if (!self.localVideoSource) {
+        self.localVideoSource = [self.peerConnectionFactory videoSourceWithCapturer:self.localVideoCapture constraints:self.videoConstraints];
+    }
+    if (!self.localVideoTrack) {
+        [self setLocalVideoTrack:[self.peerConnectionFactory videoTrackWithID:@"ARDAMSv0" source:self.localVideoSource]];
+    }
+    if ([self localVideoTrack]) {
+        [lms addVideoTrack:[self localVideoTrack]];
+    }
+
+    //** add stream
+    [self.peerConnection addStream:lms constraints:self.pcConstraints];
+    
+    if (isInitiator) {
+        [self callerStart];
+    }else{
+        [self calleeStart];
+    }
+
+    if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorkerDidStartRTCTask:)]) {
+        [self.delegate rtcWorkerDidStartRTCTask:self];
+    }
+    return YES;
+}
+
+- (void)stopRTCTaskAsInitiator:(BOOL)flag
+{
+    if (self.peerConnection) {
+        [self.queuedSignalingMessages removeAllObjects];
+        
+
+        [self.peerConnection close];
+        self.peerConnection = nil;
+        self.hasCreatedPeerConnection = NO;
+        isInitiator = NO;
+
+        if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorkerDidStopRTCTask:)]) {
+            [self.delegate rtcWorkerDidStopRTCTask:self];
+        }
+        
+        if(flag){
+            dispatch_async(dispatch_get_main_queue(), ^(void) {
+                NSDictionary *jsonDict = @{ @"type" : @"bye"};
+                NSError *error;
+                NSData *jsonData = [NSJSONSerialization dataWithJSONObject:jsonDict options:0 error:&error];
+                NSAssert(!error,@"%@",[NSString stringWithFormat:@"Error: %@", error.description]);
+                NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                
+                //TODO:解耦
+                NSAssert(rtcTarget != Nil, @"rtcTarget can't be nil");
+                [[XMPPWorker sharedInstance] sendSignalingMessage:jsonStr toUser:rtcTarget];
+            });
+        }
+    }
+}
+#pragma mark - RTCPeerConnectionDelegate
+// Triggered when there is an error.
+- (void)peerConnectionOnError:(RTCPeerConnection *)peerConnection
+{
+	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+}
+
+// Triggered when the SignalingState changed.
+- (void)peerConnection:(RTCPeerConnection *)peerConnection
+ signalingStateChanged:(RTCSignalingState)stateChanged
+{
+	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+
+}
+
+// Triggered when media is received on a new stream from remote peer.
+//P2P通讯的时候，只执行一次。因为只收到对方的一个 stream
+- (void)peerConnection:(RTCPeerConnection *)peerConnection
+           addedStream:(RTCMediaStream *)stream
+{
+	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+
+    dispatch_async(dispatch_get_main_queue(), ^(void) {
+        NSAssert([stream.audioTracks count] >= 1,
+                 @"Expected at least 1 audio stream");
+        
+        NSAssert([stream.videoTracks count] >= 1,
+                 @"Expected at least 1 video stream");
+        
+        if ([stream.videoTracks count] > 0) {
+            if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorker:onRenderVideoTrackInterface:)]) {
+                [self.delegate rtcWorker:self onRenderVideoTrackInterface:[stream.videoTracks objectAtIndex:0]];
+            }
+        }
+    });
+}
+
+// Triggered when a remote peer close a stream.
+- (void)peerConnection:(RTCPeerConnection *)peerConnection
+         removedStream:(RTCMediaStream *)stream
+{
+	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+    [stream removeVideoTrack:[stream.videoTracks objectAtIndex:0]];
+}
+
+// Triggered when renegotation is needed, for example the ICE has restarted.
+- (void)peerConnectionOnRenegotiationNeeded:(RTCPeerConnection *)peerConnection
+{
+	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+
+}
+
+// Called any time the ICEConnectionState changes.
+- (void)peerConnection:(RTCPeerConnection *)peerConnection
+  iceConnectionChanged:(RTCICEConnectionState)newState
+{
+	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+
+}
+
+// Called any time the ICEGatheringState changes.
+- (void)peerConnection:(RTCPeerConnection *)peerConnection
+   iceGatheringChanged:(RTCICEGatheringState)newState
+{
+	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+
+}
+
+// New Ice candidate have been found.
+- (void)peerConnection:(RTCPeerConnection *)peerConnection
+       gotICECandidate:(RTCICECandidate *)candidate
+{
+	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+
+    NSDictionary *jsonDict =
+    @{ @"type" : @"candidate",
+       @"label" : [NSNumber numberWithInt:candidate.sdpMLineIndex],
+       @"id" : candidate.sdpMid,
+       @"candidate" : candidate.sdp };
+    NSError *error;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:jsonDict options:0 error:&error];
+    if (!error) {
+        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        EASYLogInfo(@"candidate:%@",jsonStr);
+        
+        //TODO:to make the XMPPWorker and RTCWorker fully decoupled
+        NSAssert(rtcTarget != Nil, @"rtcTarget can't be nil");
+        [[XMPPWorker sharedInstance] sendSignalingMessage:jsonStr toUser:rtcTarget];
+    } else {
+        NSAssert(NO, @"Unable to serialize JSON object with error: %@",
+                 error.localizedDescription);
+    }
+}
+
+#pragma mark - RTCSessionDescriptonDelegate
+// Called when creating a session.
+- (void)peerConnection:(RTCPeerConnection *)peerConnection
+didCreateSessionDescription:(RTCSessionDescription *)origSdp
+                 error:(NSError *)error
+{
+	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+
+    if (error) {
+        NSAssert(NO, error.description);
+        return;
+    }
+    
+    RTCSessionDescription* sdp = [[RTCSessionDescription alloc] initWithType:origSdp.type sdp:[RTCWorker preferISAC:origSdp.description]];
+    [self.peerConnection setLocalDescriptionWithDelegate:self
+                                      sessionDescription:sdp];
+
+    dispatch_async(dispatch_get_main_queue(), ^(void) {
+        NSDictionary *jsonDict = @{ @"type" : sdp.type, @"sdp" : sdp.description };
+        NSError *error;
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:jsonDict options:0 error:&error];
+        NSAssert(!error,@"%@",[NSString stringWithFormat:@"Error: %@", error.description]);
+        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        EASYLogInfo(@"SDP:%@",jsonStr);
+
+        //TODO:to make the XMPPWorker and RTCWorker fully decoupled
+        NSAssert(rtcTarget != Nil, @"rtcTarget can't be nil");
+        [[XMPPWorker sharedInstance] sendSignalingMessage:jsonStr toUser:rtcTarget];
+    });
+}
+
+// Called when setting a local or remote description.
+- (void)peerConnection:(RTCPeerConnection *)peerConnection
+didSetSessionDescriptionWithError:(NSError *)error
+{
+    EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
+    if (error) {
+        NSAssert(NO, error.description);
+        return;
+    }
+    
+    dispatch_async(dispatch_get_main_queue(), ^(void) {
+        // TODO(hughv): Handle non-initiator case.  http://s10/46622051
+        if (self.peerConnection.remoteDescription) {
+            EASYLogVerbose(@"SDP onSuccess - drain candidates");
+            //[self drainRemoteCandidates];
+        } else {
+            EASYLogVerbose(@"*** self.peerConnection.remoteDescription is NULL");
+        }
+    });
+}
+
+
+#pragma mark - XMPPWorkerSignalingDelegate
+- (void)xmppWorker:(XMPPWorker *)sender didReceiveSignalingMessage:(XMPPMessage *)message
+{
+    //TODO:code to JUST process signaling from rtcTarget(jidFrom==rtcTarget)
+    if ([message isMessageWithBody]) {
+        NSString *jidFrom = [[message from] bare];
+        NSString *jsonStr = [message body];
+        NSData *jsonData = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
+        NSError *error;
+        NSDictionary *jsonDict = [NSJSONSerialization JSONObjectWithData:jsonData options:kNilOptions error:&error];
+        NSAssert(!error,@"%@",[NSString stringWithFormat:@"Error: %@", error.description]);
+        NSString *type = [jsonDict objectForKey:@"type"];
+        
+        if (!isInitiator && !hasCreatedPeerConnection) {
+            if ([type compare:@"offer"] == NSOrderedSame) {
+                [self.queuedSignalingMessages insertObject:jsonStr atIndex:0];
+               
+                //TODO:ChangeIt-NOW FOR CONVENIENCE we assume that we ONLY have a targetJID. When have more targetJIDs, we should change it
+                if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorkerDidGetRTCTaskRequest:fromUser:)]) {
+                    [self.delegate rtcWorkerDidGetRTCTaskRequest:self fromUser:jidFrom];
+                }
+            }else{
+                [self.queuedSignalingMessages addObject:jsonStr];
+            }
+        }else{
+            [self processSignalingMessage:jsonStr];
+        }
+    }
+}
+@end

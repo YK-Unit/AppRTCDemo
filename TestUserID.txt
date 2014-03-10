@@ -1,0 +1,8 @@
+Test UserID：
+rtc_one@jabbernet.dk	123456
+rtc_two@jabbernet.dk	123456
+xmpp_one@jabbernet.dk	123456
+xmpp_two@jabbernet.dk	123456
+
+
+PS:the free Jabber server:http://www.chatopus.com/support/getting_started.gb.html

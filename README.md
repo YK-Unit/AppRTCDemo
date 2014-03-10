@@ -2,7 +2,7 @@ WebRTC4iOS - AppRTCDemo
 =================================
 ####About AppRTCDemo#
 ---
-This is a WebRTC4iOS client demo. The demo show how 2 ios clients have a real-time video communication. If you have the TURN server, they can communicate in different LAN.
+This is a WebRTC4iOS client demo. This demo show how 2 ios clients have a real-time video communication. If you have the TURN server, they can communicate in different LAN.
 
 
 ####Requirements#
@@ -28,7 +28,9 @@ In fact, the official has provided us some [Native Example Applications](https:/
 ---
 Signaling protocols and mechanisms are not defined by WebRTC standards, so you need to build it by yourself.
 
-The demo use XMPP to build the signaling service.It implements this with [XMPPFramework](https://github.com/robbiehanson/XMPPFramework).
+The demo uses XMPP to build the signaling service.It implements that with [XMPPFramework](https://github.com/robbiehanson/XMPPFramework).
+
+PS: The [official iOS example](https://code.google.com/p/webrtc/source/browse/#svn%2Ftrunk%2Ftalk%2Fexamples%2Fios%2FAppRTCDemo%253Fstate%253Dclosed) uses the Google App Engine [Channel API](https://developers.google.com/appengine/docs/python/channel/?csw=1) to build the service.
 
 ####The Demo's Show#
 ---

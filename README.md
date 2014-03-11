@@ -1,4 +1,4 @@
-WebRTC4iOS - AppRTCDemo
+AppRTCDemo - A WebRTC for iOS Client Demo
 =================================
 ####About AppRTCDemo#
 ---

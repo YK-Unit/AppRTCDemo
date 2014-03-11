@@ -9,6 +9,7 @@
 #import "RosterViewController.h"
 #import "LoginViewController.h"
 #import "ModalAlert.h"
+#import "RTCMediaStream.h"
 
 @interface RosterViewController ()
 - (void)doLogout;
@@ -215,9 +216,17 @@
 
 }
 
-- (void)rtcWorker:(RTCWorker *)sender onRenderVideoTrackInterface:(RTCVideoTrack *)videoTrack
+- (void)rtcWorker:(RTCWorker *)sender didReceiveRemoteStream:(RTCMediaStream *)stream
 {
-    [self.rtcVideoView renderVideoTrackInterface:videoTrack];
+    NSAssert([stream.audioTracks count] >= 1,
+             @"Expected at least 1 audio stream");
+    
+    NSAssert([stream.videoTracks count] >= 1,
+             @"Expected at least 1 video stream");
+    
+    if ([stream.videoTracks count] > 0) {
+        [self.rtcVideoView renderVideoTrackInterface:[stream.videoTracks objectAtIndex:0]];
+    }
 }
 
 - (void)rtcWorkerDidStopRTCTask:(RTCWorker *)sender
@@ -226,7 +235,7 @@
     self.navigationItem.rightBarButtonItem = nil;
 }
 
-- (void)rtcWorkerDidGetRTCTaskRequest:(RTCWorker *)sender fromUser:(NSString *)bareJID
+- (void)rtcWorkerDidReceiveRTCTaskRequest:(RTCWorker *)sender fromUser:(NSString *)bareJID
 {
     [self performSelectorOnMainThread:@selector(doDealWithRTCRequestFromUser:) withObject:bareJID waitUntilDone:NO];
 }

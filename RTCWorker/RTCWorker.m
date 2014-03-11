@@ -139,7 +139,7 @@
 
     NSMutableArray *ICEServers = [NSMutableArray array];
 
-#warning - set yourself TURN servers.\
+#warning - set yourself STUN/TURN servers.\
            If have none, you ONLY have p2p RTC in the SAME LAN
     //if you have a TURN server ,then add it to ICEServers like this
     /*
@@ -150,6 +150,9 @@
     RTCICEServer *ICEServer = [[RTCICEServer alloc] initWithURI:[NSURL URLWithString:url]username:username password:credential];
     [ICEServers addObject:ICEServer];
     */
+    //TODO:delete it!!!!
+    RTCICEServer *ICEServer = [[RTCICEServer alloc] initWithURI:[NSURL URLWithString:@"turn:115.29.161.5:3478"] username:@"cellcom" password:@"cellcom123456"];
+    [ICEServers addObject:ICEServer];
     
     return ICEServers;
 }
@@ -386,16 +389,9 @@
 	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
 
     dispatch_async(dispatch_get_main_queue(), ^(void) {
-        NSAssert([stream.audioTracks count] >= 1,
-                 @"Expected at least 1 audio stream");
-        
-        NSAssert([stream.videoTracks count] >= 1,
-                 @"Expected at least 1 video stream");
-        
-        if ([stream.videoTracks count] > 0) {
-            if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorker:onRenderVideoTrackInterface:)]) {
-                [self.delegate rtcWorker:self onRenderVideoTrackInterface:[stream.videoTracks objectAtIndex:0]];
-            }
+    
+        if(self.delegate && [self.delegate respondsToSelector:@selector(rtcWorker:didReceiveRemoteStream:)]){
+            [self.delegate rtcWorker:self didReceiveRemoteStream:stream];
         }
     });
 }
@@ -412,7 +408,6 @@
 - (void)peerConnectionOnRenegotiationNeeded:(RTCPeerConnection *)peerConnection
 {
 	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
-
 }
 
 // Called any time the ICEConnectionState changes.
@@ -420,7 +415,6 @@
   iceConnectionChanged:(RTCICEConnectionState)newState
 {
 	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
-
 }
 
 // Called any time the ICEGatheringState changes.
@@ -428,7 +422,6 @@
    iceGatheringChanged:(RTCICEGatheringState)newState
 {
 	EASYLogVerbose(@"%@: %@", THIS_FILE, THIS_METHOD);
-
 }
 
 // New Ice candidate have been found.
@@ -528,8 +521,8 @@ didSetSessionDescriptionWithError:(NSError *)error
                 [self.queuedSignalingMessages insertObject:jsonStr atIndex:0];
                
                 //TODO:ChangeIt-NOW FOR CONVENIENCE we assume that we ONLY have a targetJID. When have more targetJIDs, we should change it
-                if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorkerDidGetRTCTaskRequest:fromUser:)]) {
-                    [self.delegate rtcWorkerDidGetRTCTaskRequest:self fromUser:jidFrom];
+                if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorkerDidReceiveRTCTaskRequest:fromUser:)]) {
+                    [self.delegate rtcWorkerDidReceiveRTCTaskRequest:self fromUser:jidFrom];
                 }
             }else{
                 [self.queuedSignalingMessages addObject:jsonStr];

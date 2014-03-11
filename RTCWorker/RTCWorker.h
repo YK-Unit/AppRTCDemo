@@ -39,7 +39,8 @@
 @optional
 - (void)rtcWorkerDidStartRTCTask:(RTCWorker *)sender;
 - (void)rtcWorker:(RTCWorker *)sender onRenderVideoTrackInterface:(RTCVideoTrack *)videoTrack;
+- (void)rtcWorker:(RTCWorker *)sender didReceiveRemoteStream:(RTCMediaStream *)stream;
 - (void)rtcWorkerDidStopRTCTask:(RTCWorker *)sender;
-- (void)rtcWorkerDidGetRTCTaskRequest:(RTCWorker *)sender fromUser:(NSString *)bareJID;
+- (void)rtcWorkerDidReceiveRTCTaskRequest:(RTCWorker *)sender fromUser:(NSString *)bareJID;
 @end
 

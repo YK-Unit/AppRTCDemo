@@ -180,7 +180,7 @@
         [lms addAudioTrack:self.localAudioTrack];
     }
     
-    //** add stream
+    //add local stream
     [self.peerConnection addStream:lms constraints:self.pcConstraints];
     
     if (isInitiator) {
@@ -242,16 +242,13 @@
     RTCICEServer *ICEServer = [[RTCICEServer alloc] initWithURI:[NSURL URLWithString:url]username:username password:credential];
     [ICEServers addObject:ICEServer];
     */
-    //TODO:delete it!!!!
-    RTCICEServer *ICEServer = [[RTCICEServer alloc] initWithURI:[NSURL URLWithString:@"turn:115.29.161.5:3478"] username:@"cellcom" password:@"cellcom123456"];
-    [ICEServers addObject:ICEServer];
     
     return ICEServers;
 }
 
 - (void)callerStart
 {
-    //** create offer
+    //create offer
     [self.peerConnection createOfferWithDelegate:self constraints:self.sdpConstraints];
     EASYLogInfo(@"create offer ...");
 }
@@ -284,7 +281,7 @@
                                       initWithType:type sdp:[RTCWorker preferISAC:sdpString]];
         [self.peerConnection setRemoteDescriptionWithDelegate:self sessionDescription:sdp];
         
-        //** create answer
+        //create answer
         [self.peerConnection createAnswerWithDelegate:self constraints:self.sdpConstraints];
         EASYLogInfo(@"crate answer ...");
         

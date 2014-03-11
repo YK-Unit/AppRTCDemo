@@ -9,7 +9,7 @@
 #import <Foundation/Foundation.h>
 #import "RTCSessionDescriptonDelegate.h"
 #import "RTCPeerConnectionDelegate.h"
-#import "RTCVideoTrack.h"
+
 @protocol RTCWorkerDelegate;
 
 @interface RTCWorker : NSObject

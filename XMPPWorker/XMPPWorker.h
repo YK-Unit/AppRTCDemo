@@ -79,6 +79,6 @@ startEngine ➝ [connect ⇄ disconnect] ➝ stopEngine
 
 @protocol XMPPWorkerSignalingDelegate <NSObject>
 @optional
-// Called when get a signaling message.
+// Called when receive a signaling message.
 - (void)xmppWorker:(XMPPWorker *)sender didReceiveSignalingMessage:(XMPPMessage *)message;
 @end

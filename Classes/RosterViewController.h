@@ -11,7 +11,7 @@
 #import "RTCVideoView.h"
 
 @interface RosterViewController : UIViewController
-<UITableViewDataSource,UITableViewDelegate,NSFetchedResultsControllerDelegate,RTCWorkerDelegate>
+<UITableViewDataSource,UITableViewDelegate,NSFetchedResultsControllerDelegate,RTCWorkerDelegate,XMPPWorkerSignalingDelegate>
 @property (weak, nonatomic) IBOutlet UITableView *myTableView;
 @property (strong, nonatomic) RTCVideoView *rtcVideoView;
 @end

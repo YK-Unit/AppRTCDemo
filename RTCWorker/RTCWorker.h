@@ -13,7 +13,7 @@
 @protocol RTCWorkerDelegate;
 
 @interface RTCWorker : NSObject
-<RTCPeerConnectionDelegate,RTCSessionDescriptonDelegate,XMPPWorkerSignalingDelegate>
+<RTCPeerConnectionDelegate,RTCSessionDescriptonDelegate>
 {
     NSString *rtcTarget;
     BOOL isInitiator;
@@ -33,9 +33,12 @@
 - (void)stopEngine;
 - (BOOL)startRTCTaskAsInitiator:(BOOL)flag withTarget:(NSString *)targetJID;
 - (void)stopRTCTaskAsInitiator:(BOOL)flag;
+- (void)processSignalingMessage:(NSString *)message fromUser:(NSString *)from;
 @end
 
 @protocol RTCWorkerDelegate <NSObject>
+@required
+- (void)rtcWorker:(RTCWorker *)sender sendSignalingMessage:(NSString *)message toUser:(NSString *)user;
 @optional
 - (void)rtcWorkerDidStartRTCTask:(RTCWorker *)sender;
 - (void)rtcWorker:(RTCWorker *)sender didReceiveRemoteStream:(RTCMediaStream *)stream;

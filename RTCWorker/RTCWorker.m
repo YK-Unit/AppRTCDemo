@@ -84,8 +84,6 @@
 #pragma mark - public methods
 - (void)startEngine
 {
-    [XMPPWorker sharedInstance].signalingDelegate = self;
-    
     [RTCPeerConnectionFactory initializeSSL];
     
     self.peerConnectionFactory = [[RTCPeerConnectionFactory alloc] init];
@@ -121,9 +119,7 @@
 }
 
 - (void)stopEngine
-{
-    [XMPPWorker sharedInstance].signalingDelegate = nil;
-    
+{    
     [RTCPeerConnectionFactory deinitializeSSL];
 
     [self.queuedSignalingMessages removeAllObjects];
@@ -217,12 +213,46 @@
                 NSAssert(!error,@"%@",[NSString stringWithFormat:@"Error: %@", error.description]);
                 NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
                 
-                //TODO:to make the XMPPWorker and RTCWorker fully decoupled
                 NSAssert(rtcTarget != Nil, @"rtcTarget can't be nil");
-                [[XMPPWorker sharedInstance] sendSignalingMessage:jsonStr toUser:rtcTarget];
+                if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorker:sendSignalingMessage:toUser:)]) {
+                    [self.delegate rtcWorker:self sendSignalingMessage:jsonStr toUser:rtcTarget];
+                }
+
             });
         }
     }
+}
+
+- (void)processSignalingMessage:(NSString *)message fromUser:(NSString *)from
+{
+    //TODO:code to JUST process signaling from rtcTarget(jidFrom==rtcTarget)
+    NSString *jidFrom = from;
+    NSString *jsonStr = message;
+    if (!jidFrom || !jsonStr) {
+        return;
+    }
+    
+    NSData *jsonData = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
+    NSError *error;
+    NSDictionary *jsonDict = [NSJSONSerialization JSONObjectWithData:jsonData options:kNilOptions error:&error];
+    NSAssert(!error,@"%@",[NSString stringWithFormat:@"Error: %@", error.description]);
+    NSString *type = [jsonDict objectForKey:@"type"];
+    
+    if (!isInitiator && !hasCreatedPeerConnection) {
+        if ([type compare:@"offer"] == NSOrderedSame) {
+            [self.queuedSignalingMessages insertObject:jsonStr atIndex:0];
+            
+            //TODO:ChangeIt-NOW FOR CONVENIENCE we assume that we ONLY have a targetJID. When have more targetJIDs, we should change it
+            if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorkerDidReceiveRTCTaskRequest:fromUser:)]) {
+                [self.delegate rtcWorkerDidReceiveRTCTaskRequest:self fromUser:jidFrom];
+            }
+        }else{
+            [self.queuedSignalingMessages addObject:jsonStr];
+        }
+    }else{
+        [self processSignalingMessage:jsonStr];
+    }
+    
 }
 
 #pragma mark - private methods
@@ -448,9 +478,10 @@
         NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
         EASYLogInfo(@"candidate:%@",jsonStr);
         
-        //TODO:to make the XMPPWorker and RTCWorker fully decoupled
         NSAssert(rtcTarget != Nil, @"rtcTarget can't be nil");
-        [[XMPPWorker sharedInstance] sendSignalingMessage:jsonStr toUser:rtcTarget];
+        if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorker:sendSignalingMessage:toUser:)]) {
+            [self.delegate rtcWorker:self sendSignalingMessage:jsonStr toUser:rtcTarget];
+        }
     } else {
         NSAssert(NO, @"Unable to serialize JSON object with error: %@",
                  error.localizedDescription);
@@ -482,9 +513,10 @@ didCreateSessionDescription:(RTCSessionDescription *)origSdp
         NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
         EASYLogInfo(@"SDP:%@",jsonStr);
 
-        //TODO:to make the XMPPWorker and RTCWorker fully decoupled
         NSAssert(rtcTarget != Nil, @"rtcTarget can't be nil");
-        [[XMPPWorker sharedInstance] sendSignalingMessage:jsonStr toUser:rtcTarget];
+        if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorker:sendSignalingMessage:toUser:)]) {
+            [self.delegate rtcWorker:self sendSignalingMessage:jsonStr toUser:rtcTarget];
+        }
     });
 }
 
@@ -507,36 +539,6 @@ didSetSessionDescriptionWithError:(NSError *)error
             EASYLogVerbose(@"*** self.peerConnection.remoteDescription is NULL");
         }
     });
-}
-
-#pragma mark - XMPPWorkerSignalingDelegate
-- (void)xmppWorker:(XMPPWorker *)sender didReceiveSignalingMessage:(XMPPMessage *)message
-{
-    //TODO:code to JUST process signaling from rtcTarget(jidFrom==rtcTarget)
-    if ([message isMessageWithBody]) {
-        NSString *jidFrom = [[message from] bare];
-        NSString *jsonStr = [message body];
-        NSData *jsonData = [jsonStr dataUsingEncoding:NSUTF8StringEncoding];
-        NSError *error;
-        NSDictionary *jsonDict = [NSJSONSerialization JSONObjectWithData:jsonData options:kNilOptions error:&error];
-        NSAssert(!error,@"%@",[NSString stringWithFormat:@"Error: %@", error.description]);
-        NSString *type = [jsonDict objectForKey:@"type"];
-        
-        if (!isInitiator && !hasCreatedPeerConnection) {
-            if ([type compare:@"offer"] == NSOrderedSame) {
-                [self.queuedSignalingMessages insertObject:jsonStr atIndex:0];
-               
-                //TODO:ChangeIt-NOW FOR CONVENIENCE we assume that we ONLY have a targetJID. When have more targetJIDs, we should change it
-                if (self.delegate && [self.delegate respondsToSelector:@selector(rtcWorkerDidReceiveRTCTaskRequest:fromUser:)]) {
-                    [self.delegate rtcWorkerDidReceiveRTCTaskRequest:self fromUser:jidFrom];
-                }
-            }else{
-                [self.queuedSignalingMessages addObject:jsonStr];
-            }
-        }else{
-            [self processSignalingMessage:jsonStr];
-        }
-    }
 }
 
 @end

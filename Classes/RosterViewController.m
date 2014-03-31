@@ -42,6 +42,7 @@
     self.myTableView.delegate = self;
     
     [RTCWorker sharedInstance].delegate = self;
+    [XMPPWorker sharedInstance].signalingDelegate = self;
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -206,7 +207,13 @@
         [[RTCWorker sharedInstance] startRTCTaskAsInitiator:YES withTarget:bareJID];
     }
 }
+
 #pragma mark - RTCWorkerDelegate
+- (void)rtcWorker:(RTCWorker *)sender sendSignalingMessage:(NSString *)message toUser:(NSString *)user
+{
+    [[XMPPWorker sharedInstance] sendSignalingMessage:message toUser:user];
+}
+
 - (void)rtcWorkerDidStartRTCTask:(RTCWorker *)sender
 {
     [self addVideoView];
@@ -253,10 +260,20 @@
         NSAssert(!error,@"%@",[NSString stringWithFormat:@"Error: %@", error.description]);
         NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
         
-        //TODO:ToDecouple
+        //TODO:To Decouple
         [[XMPPWorker sharedInstance] sendSignalingMessage:jsonStr toUser:bareJID];
     }
+}
 
+#pragma mark - XMPPWorkerSignalingDelegate
+- (void)xmppWorker:(XMPPWorker *)sender didReceiveSignalingMessage:(XMPPMessage *)message
+{
+    if ([message isMessageWithBody]) {
+        NSString *fromUser = [[message from] bare];
+        NSString *signalingMessage = [message body];
+        
+        [[RTCWorker sharedInstance] processSignalingMessage:signalingMessage fromUser:fromUser];
+    }
 }
 
 #pragma mark - RTCVideoView

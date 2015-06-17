@@ -264,14 +264,14 @@
 #warning - set yourself STUN/TURN servers.\
            If have none, you ONLY have p2p RTC in the SAME LAN
     //if you have a TURN server ,then add it to ICEServers like this
-    /*
+/*
     NSString *url = @"turn:192.168.10.10:3478";
     NSString *username = @"name";
     NSString *credential = @"pwd";
     
-    RTCICEServer *ICEServer = [[RTCICEServer alloc] initWithURI:[NSURL URLWithString:url]username:username password:credential];
+    RTCICEServer *ICEServer = [[RTCICEServer alloc] initWithURI:url username:username password:credential];
     [ICEServers addObject:ICEServer];
-    */
+*/
     
     return ICEServers;
 }

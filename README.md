@@ -213,9 +213,9 @@ PS: The [official iOS example](https://code.google.com/p/webrtc/source/browse/#s
 
 ---
 ##100% Attention#
-* In this demo, I custom-make a `signaling` type XMPPMessage to transfer the signallings. **Before run this demo, Please Check whether your jabber server can support this custom XMPPMessage.** If your jabber server cann't support it, you should modify the custom XMPPMessage's type that your jabber server can support in the `XMPPMessage+Signaling` file.
+* In this demo, I custom-make a `signaling` type XMPPMessage to transfer the signallings. **Before run this demo, Please Check whether your jabber server can support this custom XMPPMessage.** If your jabber server cann't support it, you should modify the custom XMPPMessage's type that your jabber server can support in the `XMPPMessage+Signaling` file, for example in the file change `TYPE_SIGNALING` macro value `signaling` to `chat`.
 
-* 在该Demo中，我使用的是自定义的、类型为 `signaling` 的 XMPPMessage 来传递信令。**运行该Demo前，请务必检测你的jabber服务器是否支持这种自定义类型的 XMPPMessage 。**如果不支持，请把该类型的 XMPPMessage 修改为你的jabber服务器支持的类型（在`XMPPMessage+Signaling`文件中修改即可）。
+* 在该Demo中，我使用的是自定义的、类型为 `signaling` 的 XMPPMessage 来传递信令。**运行该Demo前，请务必检测你的jabber服务器是否支持这种自定义类型的 XMPPMessage 。**如果不支持，请把该类型的 XMPPMessage 修改为你的jabber服务器支持的类型，如 `chat` 类型（在`XMPPMessage+Signaling`文件中修改`TYPE_SIGNALING`的宏定义值即可）。
 
 ---
 ##Change Log#
